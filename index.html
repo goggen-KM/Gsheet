@@ -3,219 +3,247 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Supabase Viewer v001</title>
+  <title>Supabase Viewer v002</title>
   <style>
-    :root{--bg:#f6f7f9;--card:#fff;--line:#d9dee7;--text:#1f2937;--muted:#6b7280;--accent:#2563eb;--bad:#dc2626;--ok:#15803d;}
+    :root{--bg:#f6f7f9;--card:#fff;--line:#d9dee7;--text:#1f2937;--muted:#6b7280;--accent:#2563eb;--bad:#dc2626;--ok:#15803d;--warn:#b45309;}
     body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);}
-    header{background:#111827;color:#fff;padding:14px 18px;}
+    header{background:#111827;color:#fff;padding:14px 18px;position:sticky;top:0;z-index:10;}
     header h1{font-size:18px;margin:0;} header .ver{font-size:12px;color:#cbd5e1;margin-top:4px;}
-    main{max-width:1180px;margin:0 auto;padding:16px;}
+    main{max-width:1280px;margin:0 auto;padding:16px;}
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
     label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;}
     input,select,button{font:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;box-sizing:border-box;}
-    input,select{width:100%;}
-    button{cursor:pointer;background:#fff;} button.primary{background:var(--accent);color:#fff;border-color:var(--accent);} button:disabled{opacity:.5;cursor:not-allowed;}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-    .status{font-size:13px;margin-top:8px;color:var(--muted);} .status.ok{color:var(--ok);} .status.err{color:var(--bad);white-space:pre-wrap;}
-    table{border-collapse:collapse;width:100%;font-size:13px;background:#fff;}
-    th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;}
-    th{background:#f3f4f6;position:sticky;top:0;z-index:1;}
-    .table-wrap{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;}
-    .summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0;}
-    .pill{background:#f3f4f6;border:1px solid var(--line);border-radius:10px;padding:10px;}
-    .pill b{display:block;font-size:18px;margin-top:4px;}
-    .muted{color:var(--muted);font-size:12px;}
-    .danger{color:var(--bad);} .hidden{display:none;}
-    @media(max-width:760px){.grid{grid-template-columns:1fr}.summary{grid-template-columns:1fr 1fr}}
+    input,select{width:100%;}button{cursor:pointer;background:#fff;}button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}button:disabled{opacity:.5;cursor:not-allowed;}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}.status{font-size:13px;margin-top:8px;color:var(--muted);white-space:pre-wrap}.status.ok{color:var(--ok)}.status.err{color:var(--bad)}.status.warn{color:var(--warn)}
+    table{border-collapse:collapse;width:100%;font-size:13px;background:#fff;}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;}th{background:#f3f4f6;position:sticky;top:0;z-index:1;}
+    .table-wrap{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;}.summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:10px 0}.pill{background:#f3f4f6;border:1px solid var(--line);border-radius:10px;padding:10px}.pill b{display:block;font-size:18px;margin-top:4px}.muted{color:var(--muted);font-size:12px}.hidden{display:none}.danger{color:var(--bad)}.small{font-size:12px;color:var(--muted)}
+    @media(max-width:800px){.grid,.grid3{grid-template-columns:1fr}.summary{grid-template-columns:1fr 1fr}.row button{width:100%}}
   </style>
 </head>
 <body>
 <header>
   <h1>Supabase Viewer</h1>
-  <div class="ver">v001 / students・work_records 読み込み確認用</div>
+  <div class="ver">v002 / 学生検索・クラス選択・期間指定・Excel出力</div>
 </header>
 <main>
   <section class="card">
     <h2 style="font-size:16px;margin:0 0 10px">接続設定</h2>
     <div class="grid">
-      <div>
-        <label for="url">Supabase Project URL</label>
-        <input id="url" placeholder="https://xxxx.supabase.co" autocomplete="off" />
-      </div>
-      <div>
-        <label for="key">anon public key</label>
-        <input id="key" placeholder="eyJ..." autocomplete="off" />
-      </div>
+      <div><label for="url">Supabase Project URL</label><input id="url" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
+      <div><label for="key">publishable key / anon public key</label><input id="key" placeholder="sb_publishable_... または anon key" autocomplete="off"></div>
     </div>
     <div class="row" style="margin-top:10px">
       <button class="primary" id="saveBtn">設定を保存</button>
       <button id="loadStudentsBtn">学生一覧を読み込む</button>
       <button id="clearBtn">設定を消す</button>
     </div>
-    <div id="connStatus" class="status">Project URL と anon public key を入力してください。Database password は使いません。</div>
+    <div id="connStatus" class="status">Project URL と publishable key を入力してください。Database password / secret key は使いません。</div>
   </section>
 
   <section class="card">
-    <h2 style="font-size:16px;margin:0 0 10px">学生選択</h2>
-    <div class="row">
-      <select id="studentSelect" disabled><option value="">学生を選択してください</option></select>
-      <button id="loadRecordsBtn" disabled>選択学生の記録を読む</button>
+    <h2 style="font-size:16px;margin:0 0 10px">検索・対象期間</h2>
+    <div class="grid3">
+      <div><label for="classSelect">クラス</label><select id="classSelect" disabled><option value="">すべてのクラス</option></select></div>
+      <div><label for="searchInput">学生検索</label><input id="searchInput" placeholder="学籍番号・氏名で検索" disabled></div>
+      <div><label for="studentSelect">学生</label><select id="studentSelect" disabled><option value="">学生を選択してください</option></select></div>
+      <div><label for="dateFrom">開始日</label><input id="dateFrom" type="date"></div>
+      <div><label for="dateTo">終了日</label><input id="dateTo" type="date"></div>
+      <div><label>&nbsp;</label><button id="setThisMonthBtn">今月</button> <button id="setAllPeriodBtn">期間を空にする</button></div>
     </div>
-    <div id="studentInfo" class="status"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="loadRecordsBtn" disabled>選択学生の記録を読む</button>
+      <button id="exportStudentXlsxBtn" disabled>学生別Excel出力</button>
+      <button id="exportDailyClassBtn" disabled>クラス別・日別アルバイト別Excel出力</button>
+      <button id="exportImmigrationBtn" disabled>入管提出用Excel出力</button>
+    </div>
+    <div id="filterStatus" class="status">学生一覧を読み込んでください。</div>
   </section>
 
   <section class="card" id="recordsCard">
-    <h2 style="font-size:16px;margin:0 0 10px">勤務記録</h2>
+    <h2 style="font-size:16px;margin:0 0 10px">選択学生の勤務記録</h2>
     <div class="summary">
       <div class="pill"><span class="muted">件数</span><b id="sumCount">0</b></div>
-      <div class="pill"><span class="muted">勤務日数</span><b id="sumWorkDays">0</b></div>
+      <div class="pill"><span class="muted">勤務</span><b id="sumWorkDays">0</b></div>
       <div class="pill"><span class="muted">なし</span><b id="sumNoneDays">0</b></div>
       <div class="pill"><span class="muted">合計時間</span><b id="sumHours">0.00</b></div>
-    </div>
-    <div class="row" style="margin-bottom:8px">
-      <button id="exportCsvBtn" disabled>表示中データをCSV保存</button>
-      <span class="muted">まずは読み込み確認用です。Excel/PDF出力は次版で追加できます。</span>
+      <div class="pill"><span class="muted">読み込み時間</span><b id="sumMs">-</b></div>
     </div>
     <div class="table-wrap">
-      <table id="recordsTable">
-        <thead>
-          <tr>
-            <th>日付</th><th>状態</th><th>アルバイト名</th><th>出勤</th><th>退勤</th><th>休憩</th><th>時間</th><th>上限</th><th>7日計</th><th>メモ</th>
-          </tr>
-        </thead>
-        <tbody><tr><td colspan="10" class="muted">まだデータを読み込んでいません。</td></tr></tbody>
-      </table>
+      <table id="recordsTable"><thead><tr><th>日付</th><th>状態</th><th>アルバイト名</th><th>出勤</th><th>退勤</th><th>休憩</th><th>時間</th><th>上限</th><th>7日計</th><th>メモ</th></tr></thead><tbody><tr><td colspan="10" class="muted">まだデータを読み込んでいません。</td></tr></tbody></table>
     </div>
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-const VERSION='supabase-viewer-v001';
-const LS_KEY='supabase-viewer-v001-settings';
-let client=null;
-let students=[];
-let currentRecords=[];
+const VERSION='supabase-viewer-v002';
+const LS_KEY='supabase-viewer-v002-settings';
+let client=null, students=[], filteredStudents=[], currentRecords=[];
 const $=id=>document.getElementById(id);
 
-function setStatus(id,msg,type=''){
-  const el=$(id); el.textContent=msg; el.className='status'+(type?' '+type:'');
-}
-function escapeHtml(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
-function normalizeTime(v){
-  if(v==null || v==='') return '';
-  const s=String(v);
-  const m=s.match(/(\d{1,2}):(\d{2})/);
-  return m ? String(m[1]).padStart(2,'0')+':'+m[2] : s;
-}
-function makeClient(){
-  const url=$('url').value.trim();
-  const key=$('key').value.trim();
-  if(!url || !key) throw new Error('Supabase Project URL と anon public key を入力してください。');
-  client=window.supabase.createClient(url,key);
-  return client;
-}
-function saveSettings(){
-  localStorage.setItem(LS_KEY,JSON.stringify({url:$('url').value.trim(),key:$('key').value.trim()}));
-  setStatus('connStatus','設定を保存しました。','ok');
-}
-function loadSettings(){
-  try{const s=JSON.parse(localStorage.getItem(LS_KEY)||'{}'); if(s.url)$('url').value=s.url; if(s.key)$('key').value=s.key;}catch(e){}
+function setStatus(id,msg,type=''){const el=$(id);el.textContent=msg;el.className='status'+(type?' '+type:'');}
+function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+function pad(n){return String(n).padStart(2,'0');}
+function todayIso(){return new Date().toISOString().slice(0,10);}
+function ymDate(d){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;}
+function safeName(s){return String(s||'').trim().replace(/[\\/:*?"<>|\s]+/g,'_').replace(/^_+|_+$/g,'').slice(0,80)||'no_name';}
+function normalizeTime(v){if(v==null||v==='')return '';const s=String(v);const m=s.match(/(\d{1,2}):(\d{2})/);return m?pad(m[1])+':'+m[2]:s;}
+function n(v){const x=Number(v);return Number.isFinite(x)?x:0;}
+function periodLabel(){return `${$('dateFrom').value||'all'}-${$('dateTo').value||'all'}`;}
+function selectedStudent(){const no=$('studentSelect').value;return students.find(s=>s.student_no===no)||null;}
+function makeClient(){const url=$('url').value.trim();const key=$('key').value.trim();if(!url||!key)throw new Error('Project URL と publishable key を入力してください。');client=window.supabase.createClient(url,key);return client;}
+function saveSettings(){localStorage.setItem(LS_KEY,JSON.stringify({url:$('url').value.trim(),key:$('key').value.trim()}));setStatus('connStatus','設定を保存しました。','ok');}
+function loadSettings(){try{const s=JSON.parse(localStorage.getItem(LS_KEY)||'{}');if(s.url)$('url').value=s.url;if(s.key)$('key').value=s.key;}catch(e){}}
+function setThisMonth(){const d=new Date();$('dateFrom').value=`${d.getFullYear()}-${pad(d.getMonth()+1)}-01`;const e=new Date(d.getFullYear(),d.getMonth()+1,0);$('dateTo').value=ymDate(e);}
+function setAllPeriod(){$('dateFrom').value='';$('dateTo').value='';}
+
+async function fetchPaged(makeQuery,pageSize=1000){
+  let out=[], from=0;
+  for(;;){
+    const to=from+pageSize-1;
+    const {data,error}=await makeQuery().range(from,to);
+    if(error)throw error;
+    const rows=data||[];out=out.concat(rows);
+    if(rows.length<pageSize)break;
+    from+=pageSize;
+    if(from>2000000)throw new Error('読み込み件数が多すぎます。条件を絞ってください。');
+  }
+  return out;
 }
 async function loadStudents(){
   try{
-    setStatus('connStatus','学生一覧を読み込み中...');
-    const sb=makeClient();
-    const {data,error}=await sb.from('students').select('student_no,name,class_name,restore_code,created_at,updated_at').order('student_no',{ascending:true});
-    if(error) throw error;
-    students=data||[];
-    const sel=$('studentSelect');
-    sel.innerHTML='<option value="">学生を選択してください</option>';
-    for(const st of students){
-      const opt=document.createElement('option');
-      opt.value=st.student_no;
-      opt.textContent=`${st.student_no}　${st.name||''}　${st.class_name||''}`;
-      sel.appendChild(opt);
-    }
-    sel.disabled=false; $('loadRecordsBtn').disabled=false;
-    setStatus('connStatus',`学生一覧を読み込みました：${students.length}名`,'ok');
-  }catch(e){
-    setStatus('connStatus','ERROR\n'+(e.message||e),'err');
+    const t0=performance.now();setStatus('connStatus','学生一覧を読み込み中...');const sb=makeClient();
+    students=await fetchPaged(()=>sb.from('students').select('student_no,name,class_name,restore_code,created_at,updated_at').order('class_name',{ascending:true}).order('student_no',{ascending:true}),1000);
+    renderClassOptions();applyStudentFilter();
+    const ms=Math.round(performance.now()-t0);setStatus('connStatus',`学生一覧を読み込みました：${students.length}名 / ${ms}ms`,'ok');
+    $('classSelect').disabled=false;$('searchInput').disabled=false;$('studentSelect').disabled=false;$('loadRecordsBtn').disabled=false;$('exportStudentXlsxBtn').disabled=false;$('exportDailyClassBtn').disabled=false;$('exportImmigrationBtn').disabled=false;
+  }catch(e){setStatus('connStatus','ERROR\n'+(e.message||e),'err');}
+}
+function renderClassOptions(){
+  const cls=[...new Set(students.map(s=>s.class_name||'').filter(Boolean))].sort();
+  $('classSelect').innerHTML='<option value="">すべてのクラス</option>'+cls.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+}
+function applyStudentFilter(){
+  const c=$('classSelect').value;const q=$('searchInput').value.trim().toLowerCase();
+  filteredStudents=students.filter(s=>(!c||s.class_name===c)&&(!q||String(s.student_no).toLowerCase().includes(q)||String(s.name||'').toLowerCase().includes(q)));
+  const sel=$('studentSelect');const old=sel.value;
+  sel.innerHTML='<option value="">学生を選択してください</option>'+filteredStudents.map(s=>`<option value="${esc(s.student_no)}">${esc(s.student_no)}　${esc(s.name||'')}　${esc(s.class_name||'')}</option>`).join('');
+  if(filteredStudents.some(s=>s.student_no===old))sel.value=old;
+  setStatus('filterStatus',`表示対象：${filteredStudents.length}名${c?' / クラス '+c:''}`);
+}
+function recordsQueryBase(sb){
+  let q=sb.from('work_records').select('student_no,work_date,status,job_name,start_time,end_time,break_minutes,work_hours,limit_hours,seven_day_total,note,created_at,updated_at');
+  if($('dateFrom').value)q=q.gte('work_date',$('dateFrom').value);
+  if($('dateTo').value)q=q.lte('work_date',$('dateTo').value);
+  return q;
+}
+async function fetchRecordsForStudent(studentNo){
+  const sb=makeClient();
+  return await fetchPaged(()=>recordsQueryBase(sb).eq('student_no',studentNo).order('work_date',{ascending:true}).order('start_time',{ascending:true}),1000);
+}
+async function fetchRecordsForStudentNos(studentNos){
+  const sb=makeClient();
+  let all=[];
+  const chunkSize=80;
+  for(let i=0;i<studentNos.length;i+=chunkSize){
+    const chunk=studentNos.slice(i,i+chunkSize);
+    const rows=await fetchPaged(()=>recordsQueryBase(sb).in('student_no',chunk).order('student_no',{ascending:true}).order('work_date',{ascending:true}).order('start_time',{ascending:true}),1000);
+    all=all.concat(rows);
   }
+  return all;
 }
 async function loadRecords(){
-  const studentNo=$('studentSelect').value;
-  if(!studentNo){setStatus('studentInfo','学生を選択してください。','err');return;}
-  const st=students.find(x=>x.student_no===studentNo)||{};
-  setStatus('studentInfo',`${studentNo} ${st.name||''} の記録を読み込み中...`);
-  try{
-    const sb=makeClient();
-    const {data,error}=await sb.from('work_records')
-      .select('student_no,work_date,status,job_name,start_time,end_time,break_minutes,work_hours,limit_hours,seven_day_total,note,created_at,updated_at')
-      .eq('student_no',studentNo)
-      .order('work_date',{ascending:true});
-    if(error) throw error;
-    currentRecords=data||[];
-    renderRecords(currentRecords);
-    setStatus('studentInfo',`${studentNo} ${st.name||''}：${currentRecords.length}件を読み込みました。`,'ok');
-    $('exportCsvBtn').disabled=currentRecords.length===0;
-  }catch(e){
-    setStatus('studentInfo','ERROR\n'+(e.message||e),'err');
-  }
+  const st=selectedStudent();if(!st){setStatus('filterStatus','学生を選択してください。','err');return;}
+  try{const t0=performance.now();setStatus('filterStatus',`${st.student_no} ${st.name||''} の記録を読み込み中...`);currentRecords=await fetchRecordsForStudent(st.student_no);const ms=Math.round(performance.now()-t0);renderRecords(currentRecords);setStatus('filterStatus',`${st.student_no} ${st.name||''}：${currentRecords.length}件を読み込みました。${ms}ms`,'ok');$('sumMs').textContent=ms+'ms';}
+  catch(e){setStatus('filterStatus','ERROR\n'+(e.message||e),'err');}
 }
 function renderRecords(rows){
   const tb=$('recordsTable').querySelector('tbody');
-  if(!rows.length){tb.innerHTML='<tr><td colspan="10" class="muted">記録がありません。</td></tr>'; updateSummary([]); return;}
-  tb.innerHTML=rows.map(r=>`<tr>
-    <td>${escapeHtml(r.work_date)}</td>
-    <td>${escapeHtml(r.status)}</td>
-    <td>${escapeHtml(r.job_name||'')}</td>
-    <td>${escapeHtml(normalizeTime(r.start_time))}</td>
-    <td>${escapeHtml(normalizeTime(r.end_time))}</td>
-    <td>${escapeHtml(r.break_minutes??'')}</td>
-    <td>${escapeHtml(Number(r.work_hours||0).toFixed(2))}</td>
-    <td>${escapeHtml(r.limit_hours==null?'':Number(r.limit_hours).toFixed(2))}</td>
-    <td>${escapeHtml(r.seven_day_total==null?'':Number(r.seven_day_total).toFixed(2))}</td>
-    <td>${escapeHtml(r.note||'')}</td>
-  </tr>`).join('');
+  if(!rows.length){tb.innerHTML='<tr><td colspan="10" class="muted">記録がありません。</td></tr>';updateSummary([]);return;}
+  tb.innerHTML=rows.slice(0,2000).map(r=>`<tr><td>${esc(r.work_date)}</td><td>${esc(r.status)}</td><td>${esc(r.job_name||'')}</td><td>${esc(normalizeTime(r.start_time))}</td><td>${esc(normalizeTime(r.end_time))}</td><td>${esc(r.break_minutes??'')}</td><td>${esc(n(r.work_hours).toFixed(2))}</td><td>${esc(r.limit_hours==null?'':n(r.limit_hours).toFixed(2))}</td><td>${esc(r.seven_day_total==null?'':n(r.seven_day_total).toFixed(2))}</td><td>${esc(r.note||'')}</td></tr>`).join('')+(rows.length>2000?`<tr><td colspan="10" class="muted">画面表示は先頭2000件までです。出力には全件を使います。</td></tr>`:'');
   updateSummary(rows);
 }
-function updateSummary(rows){
-  const count=rows.length;
-  const workDays=rows.filter(r=>r.status==='勤務' || Number(r.work_hours||0)>0).length;
-  const noneDays=rows.filter(r=>r.status==='なし').length;
-  const hours=rows.reduce((s,r)=>s+Number(r.work_hours||0),0);
-  $('sumCount').textContent=count;
-  $('sumWorkDays').textContent=workDays;
-  $('sumNoneDays').textContent=noneDays;
-  $('sumHours').textContent=hours.toFixed(2);
+function updateSummary(rows){$('sumCount').textContent=rows.length;$('sumWorkDays').textContent=rows.filter(r=>r.status==='勤務'||n(r.work_hours)>0).length;$('sumNoneDays').textContent=rows.filter(r=>r.status==='なし').length;$('sumHours').textContent=rows.reduce((s,r)=>s+n(r.work_hours),0).toFixed(2);}
+
+function rowsToSheet(rows){return XLSX.utils.aoa_to_sheet(rows);}
+function appendSheet(wb, rows, name){const ws=rowsToSheet(rows);ws['!cols']=rows[0].map((_,i)=>({wch:Math.min(40,Math.max(10,...rows.map(r=>String(r[i]??'').length+2)))}));XLSX.utils.book_append_sheet(wb,ws,name.slice(0,31));}
+function downloadWb(wb,fileName){XLSX.writeFile(wb,fileName,{bookType:'xlsx'});}
+function recordRows(records, studentMap){
+  const head=['学籍番号','氏名','クラス','日付','状態','アルバイト名','出勤','退勤','休憩分','労働時間','上限','7日計','メモ'];
+  const rows=[head];
+  for(const r of records){const st=studentMap.get(r.student_no)||{};rows.push([r.student_no,st.name||'',st.class_name||'',r.work_date,r.status||'',r.job_name||'',normalizeTime(r.start_time),normalizeTime(r.end_time),r.break_minutes??'',n(r.work_hours),r.limit_hours==null?'':n(r.limit_hours),r.seven_day_total==null?'':n(r.seven_day_total),r.note||'']);}
+  return rows;
 }
-function exportCsv(){
-  if(!currentRecords.length) return;
-  const stNo=$('studentSelect').value;
-  const headers=['student_no','work_date','status','job_name','start_time','end_time','break_minutes','work_hours','limit_hours','seven_day_total','note'];
-  const lines=[headers.join(',')];
-  for(const r of currentRecords){
-    lines.push(headers.map(h=>{
-      let v=(h==='start_time'||h==='end_time')?normalizeTime(r[h]):(r[h]??'');
-      v=String(v).replace(/"/g,'""');
-      return /[",\n]/.test(v)?`"${v}"`:v;
-    }).join(','));
+function groupByStudent(records){const m=new Map();for(const r of records){if(!m.has(r.student_no))m.set(r.student_no,[]);m.get(r.student_no).push(r);}return m;}
+function monthKey(date){return String(date||'').slice(0,7);}
+function buildStudentWorkbook(st, records){
+  const wb=XLSX.utils.book_new();
+  const total=records.reduce((s,r)=>s+n(r.work_hours),0);
+  appendSheet(wb,[['項目','内容'],['学籍番号',st.student_no],['氏名',st.name||''],['クラス',st.class_name||''],['対象期間',periodLabel()],['件数',records.length],['合計時間',total]],'学生情報');
+  appendSheet(wb,recordRows(records,new Map([[st.student_no,st]])),'勤務記録');
+  const monthly=[['年月','アルバイト名','合計時間']];
+  const mm=new Map();
+  for(const r of records){if(!n(r.work_hours))continue;const k=monthKey(r.work_date)+'\t'+(r.job_name||'');mm.set(k,(mm.get(k)||0)+n(r.work_hours));}
+  [...mm.entries()].sort().forEach(([k,v])=>{const [ym,job]=k.split('\t');monthly.push([ym,job,Number(v.toFixed(2))]);});
+  appendSheet(wb,monthly,'月別集計');
+  return wb;
+}
+async function exportStudentXlsx(){
+  const st=selectedStudent();if(!st){setStatus('filterStatus','学生を選択してください。','err');return;}
+  try{setStatus('filterStatus','学生別Excelを作成中...');const records=await fetchRecordsForStudent(st.student_no);const wb=buildStudentWorkbook(st,records);const file=`${safeName(st.student_no)}_${safeName(st.name)}_提出日${todayIso()}_対象期間${periodLabel()}.xlsx`;downloadWb(wb,file);setStatus('filterStatus',`学生別Excelを出力しました：${records.length}件`,'ok');}
+  catch(e){setStatus('filterStatus','ERROR\n'+(e.message||e),'err');}
+}
+function requireClassOrConfirm(){
+  const cls=$('classSelect').value;
+  if(!cls && !confirm('全クラスを対象にします。件数が多い場合は時間がかかります。続けますか？'))throw new Error('キャンセルしました。');
+  if(!$('dateFrom').value || !$('dateTo').value){if(!confirm('期間が空欄です。対象データが多い場合は時間がかかります。続けますか？'))throw new Error('キャンセルしました。');}
+}
+async function targetStudents(){const c=$('classSelect').value;const list=students.filter(s=>!c||s.class_name===c);if(!list.length)throw new Error('対象学生がいません。');return list;}
+async function fetchTargetRecords(){const list=await targetStudents();return {list,records:await fetchRecordsForStudentNos(list.map(s=>s.student_no))};}
+function buildDailyWorkbook(list, records){
+  const wb=XLSX.utils.book_new();const smap=new Map(list.map(s=>[s.student_no,s]));appendSheet(wb,recordRows(records,smap),'元データ');
+  const byStu=groupByStudent(records);const index=[['学籍番号','氏名','クラス','件数','合計時間']];
+  for(const st of list){const rs=byStu.get(st.student_no)||[];index.push([st.student_no,st.name||'',st.class_name||'',rs.length,Number(rs.reduce((s,r)=>s+n(r.work_hours),0).toFixed(2))]);}
+  appendSheet(wb,index,'提出一覧');
+  for(const st of list){const rs=byStu.get(st.student_no)||[];const jobs=[...new Set(rs.map(r=>r.job_name||'なし'))].sort();const dates=[...new Set(rs.map(r=>r.work_date))].sort();const head=['日付','曜日','上限','直近7日時間合計',...jobs.map(j=>j+' 当日'),...jobs.map(j=>j+' 7日間合計')];const rows=[head];
+    for(const d of dates){const dateObj=new Date(d+'T00:00:00');const row=[d,['日','月','火','水','木','金','土'][dateObj.getDay()],rs.find(r=>r.work_date===d&&r.limit_hours!=null)?.limit_hours??'',sumRolling(rs,d,'')];
+      for(const job of jobs)row.push(sumOn(rs,d,job));for(const job of jobs)row.push(sumRolling(rs,d,job));rows.push(row);
+    }
+    appendSheet(wb,rows,`${st.student_no}_日別`);
   }
-  const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=`${stNo}_work_records_${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  return wb;
 }
+function sumOn(rs,date,job){return Number(rs.filter(r=>r.work_date===date&&(r.job_name||'なし')===job).reduce((s,r)=>s+n(r.work_hours),0).toFixed(2))||'';}
+function sumRolling(rs,date,job){const end=new Date(date+'T00:00:00');let sum=0;for(let i=0;i<7;i++){const d=new Date(end);d.setDate(end.getDate()-i);const ds=ymDate(d);for(const r of rs){if(r.work_date===ds && (!job||(r.job_name||'なし')===job))sum+=n(r.work_hours);}}return Number(sum.toFixed(2))||'';}
+async function exportDailyClass(){
+  try{requireClassOrConfirm();const t0=performance.now();setStatus('filterStatus','クラス別・日別アルバイト別Excelを作成中...');const {list,records}=await fetchTargetRecords();const wb=buildDailyWorkbook(list,records);const file=`日別アルバイト別_${safeName($('classSelect').value||'全クラス')}_提出日${todayIso()}_対象期間${periodLabel()}.xlsx`;downloadWb(wb,file);setStatus('filterStatus',`日別アルバイト別Excelを出力しました：学生${list.length}名 / 記録${records.length}件 / ${Math.round(performance.now()-t0)}ms`,'ok');}
+  catch(e){setStatus('filterStatus','ERROR\n'+(e.message||e),'err');}
+}
+function buildImmigrationWorkbook(list, records){
+  const wb=XLSX.utils.book_new();const byStu=groupByStudent(records);const index=[['学籍番号','氏名','クラス','勤務記録件数','合計時間','シート名']];
+  for(const st of list){const rs=byStu.get(st.student_no)||[];index.push([st.student_no,st.name||'',st.class_name||'',rs.length,Number(rs.reduce((s,r)=>s+n(r.work_hours),0).toFixed(2)),`${st.student_no}`]);}
+  appendSheet(wb,index,'提出一覧');
+  for(const st of list){const rs=byStu.get(st.student_no)||[];const rows=[['国籍','学籍番号','氏名','在留カード番号','資格外活動の許可の有無'],['',st.student_no,st.name||'','',''],[],['年月','アルバイト名','アルバイト内容','各アルバイト合計時間','月稼働時間(合計)','時間超過の有無','確認・指導状況']];
+    const map=new Map();for(const r of rs){if(!n(r.work_hours))continue;const k=monthKey(r.work_date)+'\t'+(r.job_name||'');map.set(k,(map.get(k)||0)+n(r.work_hours));}
+    const monthTotals=new Map();for(const [k,v] of map.entries()){const ym=k.split('\t')[0];monthTotals.set(ym,(monthTotals.get(ym)||0)+v);}
+    for(const [k,v] of [...map.entries()].sort()){const [ym,job]=k.split('\t');const total=monthTotals.get(ym)||0;rows.push([ym,job,'',Number(v.toFixed(2)),Number(total.toFixed(2)),total>28*4?'要確認':'','']);}
+    rows.push([]);rows.push(['締め日別集計']);rows.push(['アルバイト名','締め日','集計期間','合計時間']);rows.push(['※締め日データ未登録のため、月別集計を使用しています。','','','']);
+    appendSheet(wb,rows,String(st.student_no).slice(0,31));
+  }
+  return wb;
+}
+async function exportImmigration(){
+  try{requireClassOrConfirm();const t0=performance.now();setStatus('filterStatus','入管提出用Excelを作成中...');const {list,records}=await fetchTargetRecords();const wb=buildImmigrationWorkbook(list,records);const file=`入管提出用_${safeName($('classSelect').value||'全クラス')}_提出日${todayIso()}_対象期間${periodLabel()}.xlsx`;downloadWb(wb,file);setStatus('filterStatus',`入管提出用Excelを出力しました：学生${list.length}名 / 記録${records.length}件 / ${Math.round(performance.now()-t0)}ms`,'ok');}
+  catch(e){setStatus('filterStatus','ERROR\n'+(e.message||e),'err');}
+}
+
 $('saveBtn').addEventListener('click',saveSettings);
 $('loadStudentsBtn').addEventListener('click',loadStudents);
-$('loadRecordsBtn').addEventListener('click',loadRecords);
-$('exportCsvBtn').addEventListener('click',exportCsv);
-$('clearBtn').addEventListener('click',()=>{localStorage.removeItem(LS_KEY); $('url').value=''; $('key').value=''; setStatus('connStatus','設定を消しました。');});
-$('studentSelect').addEventListener('change',()=>{const st=students.find(x=>x.student_no===$('studentSelect').value); setStatus('studentInfo',st?`${st.student_no} ${st.name||''} ${st.class_name||''}`:'');});
-loadSettings();
+$('clearBtn').addEventListener('click',()=>{localStorage.removeItem(LS_KEY);$('url').value='';$('key').value='';setStatus('connStatus','設定を消しました。');});
+$('classSelect').addEventListener('change',applyStudentFilter);$('searchInput').addEventListener('input',applyStudentFilter);$('loadRecordsBtn').addEventListener('click',loadRecords);$('exportStudentXlsxBtn').addEventListener('click',exportStudentXlsx);$('exportDailyClassBtn').addEventListener('click',exportDailyClass);$('exportImmigrationBtn').addEventListener('click',exportImmigration);$('setThisMonthBtn').addEventListener('click',setThisMonth);$('setAllPeriodBtn').addEventListener('click',setAllPeriod);
+$('studentSelect').addEventListener('change',()=>{const st=selectedStudent();setStatus('filterStatus',st?`${st.student_no} ${st.name||''} ${st.class_name||''}`:'学生を選択してください。');});
+loadSettings();setThisMonth();
 </script>
 </body>
 </html>
