@@ -1,0 +1,415 @@
+/**
+ * GSheet Viewer 用 Apps Script v001
+ * 学生GSheet版 v003 の Code.gs を置き換えて使える版です。
+ * 既存機能：学生アプリからの submitWeek / restore を維持。
+ * 追加機能：viewerAll で担任用ビューアーに全データを返します。
+ *
+ * Webアプリ設定:
+ * - 実行するユーザー: 自分
+ * - アクセスできるユーザー: 全員
+ *
+ * 任意設定:
+ * - スクリプト プロパティ VIEWER_TOKEN を設定すると、Viewerで同じコード入力が必要になります。
+ * - 空欄ならコードなしで読み込めます。
+ */
+
+const CONFIG = {
+  SUBMIT_TOKEN_PROPERTY: 'SUBMIT_TOKEN',
+  VIEWER_TOKEN_PROPERTY: 'VIEWER_TOKEN',
+  RECORD_SHEET_PREFIX: '勤務記録_'
+};
+
+const SHEETS = {
+  students: '学生一覧',
+  submitLog: '提出ログ',
+  jobs: 'アルバイト情報',
+  restoreLog: '復元ログ'
+};
+
+const HEADERS = {
+  students: ['学籍番号','氏名','クラス','復元コード','状態','初回登録日時','最終更新日時'],
+  submitLog: ['送信日時','学籍番号','氏名','クラス','対象開始日','対象終了日','件数','アプリ版','結果','メッセージ'],
+  records: ['送信日時','学籍番号','氏名','クラス','日付','曜日','状態','アルバイト番号','アルバイト名','アルバイト内容','開始','終了','休憩分','労働時間','直近7日間合計','上限','判定','アプリ版'],
+  jobs: ['送信日時','学籍番号','氏名','クラス','アルバイト番号','アルバイト名','アルバイト内容','勤務開始日','勤務終了日','締め日','アプリ版'],
+  restoreLog: ['復元日時','学籍番号','氏名','結果','取得件数','メッセージ']
+};
+
+function doPost(e) {
+  try {
+    initSheets_();
+    const payload = JSON.parse((e.postData && e.postData.contents) || '{}');
+    if (payload.action !== 'submitWeek') throw new Error('unknown action');
+    verifySubmitToken_(payload.token || '');
+    const result = handleSubmitWeek_(payload);
+    return json_(result);
+  } catch (err) {
+    try { appendSubmitLogError_(err); } catch (_) {}
+    return json_({ok:false,error:String(err && err.message || err)});
+  }
+}
+
+function doGet(e) {
+  initSheets_();
+  const p = e.parameter || {};
+  const callback = p.callback || 'callback';
+  let result;
+  try {
+    if (p.action === 'restore') {
+      result = handleRestore_(p.studentId || '', p.code || '');
+    } else if (p.action === 'viewerAll') {
+      result = handleViewerAll_(p.viewerToken || '');
+    } else {
+      result = {ok:true,message:'alive'};
+    }
+  } catch (err) {
+    result = {ok:false,error:String(err && err.message || err)};
+  }
+  return ContentService
+    .createTextOutput(callback + '(' + JSON.stringify(result) + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function initSheets_() {
+  getSheet_(SHEETS.students, HEADERS.students);
+  getSheet_(SHEETS.submitLog, HEADERS.submitLog);
+  getSheet_(SHEETS.jobs, HEADERS.jobs);
+  getSheet_(SHEETS.restoreLog, HEADERS.restoreLog);
+}
+
+function getSheet_(name, headers) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1,1,1,headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+    return sh;
+  }
+  const current = sh.getRange(1,1,1,Math.max(headers.length, sh.getLastColumn())).getValues()[0];
+  let changed = false;
+  headers.forEach((h,i)=>{ if (current[i] !== h) changed = true; });
+  if (changed) sh.getRange(1,1,1,headers.length).setValues([headers]);
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+function getRecordSheet_(dateStr) {
+  const name = recordSheetName_(dateStr);
+  return getSheet_(name, HEADERS.records);
+}
+
+function recordSheetName_(dateStr) {
+  const ds = isoCell_(dateStr);
+  const m = String(ds).match(/^(\d{4})-(\d{2})-/);
+  if (!m) throw new Error('勤務記録の日付が不正です: ' + dateStr);
+  return CONFIG.RECORD_SHEET_PREFIX + m[1] + '_' + m[2];
+}
+
+function listRecordSheets_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return ss.getSheets()
+    .filter(sh => /^勤務記録_\d{4}_\d{2}$/.test(sh.getName()))
+    .sort((a,b)=>a.getName().localeCompare(b.getName()));
+}
+
+function verifySubmitToken_(token) {
+  const required = PropertiesService.getScriptProperties().getProperty(CONFIG.SUBMIT_TOKEN_PROPERTY) || '';
+  if (required && token !== required) throw new Error('送信用トークンが違います。');
+}
+
+function verifyViewerToken_(token) {
+  const required = PropertiesService.getScriptProperties().getProperty(CONFIG.VIEWER_TOKEN_PROPERTY) || '';
+  if (required && String(token || '') !== required) throw new Error('閲覧用コードが違います。');
+}
+
+function handleSubmitWeek_(payload) {
+  const now = new Date();
+  const student = payload.student || {};
+  const sid = String(student.id || '').trim();
+  const name = String(student.name || '').trim();
+  const className = String(student.className || '').trim();
+  if (!sid) throw new Error('学籍番号がありません。');
+  if (!name) throw new Error('氏名がありません。');
+  const version = String(payload.version || '');
+  const period = payload.period || {};
+  const records = Array.isArray(payload.records) ? payload.records : [];
+  const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+
+  upsertStudent_(sid, name, className, now);
+  replaceJobs_(sid, name, className, jobs, version, now);
+  upsertRecordsByMonth_(sid, name, className, records, version, now);
+
+  appendRow_(SHEETS.submitLog, HEADERS.submitLog, [now, sid, name, className, period.start || '', period.end || '', records.length, version, 'OK', '月別シート保存']);
+  return {ok:true, count:records.length};
+}
+
+function upsertStudent_(sid, name, className, now) {
+  const sh = getSheet_(SHEETS.students, HEADERS.students);
+  const values = sh.getDataRange().getValues();
+  for (let r=1; r<values.length; r++) {
+    if (String(values[r][0]) === sid) {
+      sh.getRange(r+1,2,1,2).setValues([[name, className]]);
+      sh.getRange(r+1,7).setValue(now);
+      return;
+    }
+  }
+  sh.appendRow([sid, name, className, '', '在籍', now, now]);
+}
+
+function replaceJobs_(sid, name, className, jobs, version, now) {
+  const sh = getSheet_(SHEETS.jobs, HEADERS.jobs);
+  const values = sh.getDataRange().getValues();
+  const keep = [HEADERS.jobs];
+  for (let r=1; r<values.length; r++) {
+    if (String(values[r][1]) !== sid) keep.push(values[r]);
+  }
+  jobs.forEach(j => {
+    keep.push([now, sid, name, className, j.no || '', j.name || '', j.content || '', j.startDate || '', j.endDate || '', j.closeDay || '', version]);
+  });
+  rewriteSheet_(sh, keep, HEADERS.jobs.length);
+}
+
+function upsertRecordsByMonth_(sid, name, className, records, version, now) {
+  const byMonth = {};
+  records.forEach(r => {
+    if (!r.date) return;
+    const sheetName = recordSheetName_(r.date);
+    if (!byMonth[sheetName]) byMonth[sheetName] = [];
+    byMonth[sheetName].push(r);
+  });
+  Object.keys(byMonth).sort().forEach(sheetName => {
+    const sh = getSheet_(sheetName, HEADERS.records);
+    upsertRecordsByDateInSheet_(sh, sid, name, className, byMonth[sheetName], version, now);
+  });
+}
+
+function upsertRecordsByDateInSheet_(sh, sid, name, className, records, version, now) {
+  const values = sh.getDataRange().getValues();
+  const byDate = {};
+  records.forEach(r => {
+    if (!r.date) return;
+    const ds = isoCell_(r.date);
+    if (!byDate[ds]) byDate[ds] = [];
+    byDate[ds].push(r);
+  });
+
+  const incomingDates = Object.keys(byDate);
+  const replaceDates = {};
+  const blankOnlyDates = {};
+  incomingDates.forEach(ds => {
+    const nonBlank = byDate[ds].some(r => !isBlankRecord_(r));
+    if (nonBlank) replaceDates[ds] = true;
+    else blankOnlyDates[ds] = true;
+  });
+
+  const existingNonBlank = {};
+  for (let r=1; r<values.length; r++) {
+    const row = values[r];
+    if (String(row[1]) === sid) {
+      const ds = isoCell_(row[4]);
+      if (blankOnlyDates[ds] && !isBlankStatus_(row[6])) existingNonBlank[ds] = true;
+    }
+  }
+
+  const keep = [HEADERS.records];
+  for (let r=1; r<values.length; r++) {
+    const row = values[r];
+    if (String(row[1]) !== sid) { keep.push(row); continue; }
+    const ds = isoCell_(row[4]);
+    if (replaceDates[ds]) continue;
+    if (blankOnlyDates[ds] && !existingNonBlank[ds]) continue;
+    keep.push(row);
+  }
+
+  incomingDates.forEach(ds => {
+    if (blankOnlyDates[ds] && existingNonBlank[ds]) return;
+    byDate[ds].forEach(r => {
+      keep.push([now, sid, name, className, r.date || '', r.week || '', r.statusJa || statusToJa_(r.status), r.jobNo || '', r.name || '', r.content || '', r.start || '', r.end || '', r.breakMin === '' ? '' : Number(r.breakMin || 0), r.hours === '' ? '' : Number(r.hours || 0), r.sum7 === '' ? '' : Number(r.sum7 || 0), r.limit === '' ? '' : Number(r.limit || 0), r.judge || '', version]);
+    });
+  });
+
+  const header = keep[0];
+  const body = keep.slice(1).sort((a,b) => {
+    const sidA = String(a[1] || ''), sidB = String(b[1] || '');
+    if (sidA !== sidB) return sidA.localeCompare(sidB);
+    const d = isoCell_(a[4]).localeCompare(isoCell_(b[4]));
+    if (d) return d;
+    return Number(a[7] || 0) - Number(b[7] || 0);
+  });
+  rewriteSheet_(sh, [header].concat(body), HEADERS.records.length);
+}
+
+function handleRestore_(studentId, code) {
+  const sid = String(studentId || '').trim();
+  const restoreCode = String(code || '').trim();
+  if (!sid) throw new Error('学籍番号がありません。');
+  if (!restoreCode) throw new Error('復元コードがありません。');
+  const student = findStudent_(sid);
+  if (!student) throw new Error('学生一覧に学籍番号がありません。');
+  if (!student.restoreCode || String(student.restoreCode) !== restoreCode) throw new Error('復元コードが違います。');
+
+  const records = readRecords_(sid);
+  const jobs = readJobs_(sid);
+  appendRow_(SHEETS.restoreLog, HEADERS.restoreLog, [new Date(), sid, student.name, 'OK', records.length, '月別シートから復元']);
+  return {ok:true, student:{id:sid, name:student.name, className:student.className}, jobs, records};
+}
+
+function handleViewerAll_(viewerToken) {
+  verifyViewerToken_(viewerToken);
+  const students = readStudentsForViewer_();
+  const jobs = readAllJobsForViewer_();
+  const records = readAllRecordsForViewer_();
+  const submitLogs = readSubmitLogsForViewer_();
+  return {ok:true, generatedAt:Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'), students, jobs, records, submitLogs};
+}
+
+function readStudentsForViewer_() {
+  const sh = getSheet_(SHEETS.students, HEADERS.students);
+  const values = sh.getDataRange().getValues();
+  const out = [];
+  for (let r=1; r<values.length; r++) {
+    const row = values[r];
+    if (!row[0]) continue;
+    out.push({id:String(row[0]||''), name:String(row[1]||''), className:String(row[2]||''), status:String(row[4]||''), firstAt:dateTimeCell_(row[5]), updatedAt:dateTimeCell_(row[6])});
+  }
+  return out;
+}
+
+function readAllJobsForViewer_() {
+  const sh = getSheet_(SHEETS.jobs, HEADERS.jobs);
+  const values = sh.getDataRange().getValues();
+  const out = [];
+  for (let r=1; r<values.length; r++) {
+    const row = values[r];
+    if (!row[1]) continue;
+    out.push({submittedAt:dateTimeCell_(row[0]), studentId:String(row[1]||''), studentName:String(row[2]||''), className:String(row[3]||''), no:row[4], name:String(row[5]||''), content:String(row[6]||''), startDate:isoCell_(row[7]), endDate:isoCell_(row[8]), closeDay:row[9], version:String(row[10]||'')});
+  }
+  return out;
+}
+
+function readAllRecordsForViewer_() {
+  const out = [];
+  listRecordSheets_().forEach(sh => {
+    const values = sh.getDataRange().getValues();
+    for (let r=1; r<values.length; r++) {
+      const row = values[r];
+      if (!row[1]) continue;
+      out.push({sourceSheet:sh.getName(), submittedAt:dateTimeCell_(row[0]), studentId:String(row[1]||''), studentName:String(row[2]||''), className:String(row[3]||''), date:isoCell_(row[4]), week:String(row[5]||''), statusJa:String(row[6]||''), jobNo:row[7], name:String(row[8]||''), content:String(row[9]||''), start:timeCell_(row[10]), end:timeCell_(row[11]), breakMin:numberCell_(row[12]), hours:numberCell_(row[13]), sum7:numberCell_(row[14]), limit:numberCell_(row[15]), judge:String(row[16]||''), version:String(row[17]||'')});
+    }
+  });
+  out.sort((a,b)=>String(a.studentId).localeCompare(String(b.studentId)) || String(a.date).localeCompare(String(b.date)) || Number(a.jobNo||0)-Number(b.jobNo||0));
+  return out;
+}
+
+function readSubmitLogsForViewer_() {
+  const sh = getSheet_(SHEETS.submitLog, HEADERS.submitLog);
+  const values = sh.getDataRange().getValues();
+  const out = [];
+  for (let r=1; r<values.length; r++) {
+    const row = values[r];
+    if (!row[1]) continue;
+    out.push({submittedAt:dateTimeCell_(row[0]), studentId:String(row[1]||''), studentName:String(row[2]||''), className:String(row[3]||''), start:isoCell_(row[4]), end:isoCell_(row[5]), count:row[6], version:String(row[7]||''), result:String(row[8]||''), message:String(row[9]||'')});
+  }
+  return out;
+}
+
+function findStudent_(sid) {
+  const sh = getSheet_(SHEETS.students, HEADERS.students);
+  const values = sh.getDataRange().getValues();
+  for (let r=1; r<values.length; r++) {
+    if (String(values[r][0]) === sid) return {id:sid, name:values[r][1] || '', className:values[r][2] || '', restoreCode:values[r][3] || ''};
+  }
+  return null;
+}
+
+function readJobs_(sid) {
+  const sh = getSheet_(SHEETS.jobs, HEADERS.jobs);
+  const values = sh.getDataRange().getValues();
+  const out = [];
+  for (let r=1; r<values.length; r++) {
+    const row = values[r];
+    if (String(row[1]) !== sid) continue;
+    out.push({no:row[4], name:row[5], content:row[6], startDate:isoCell_(row[7]), endDate:isoCell_(row[8]), closeDay:row[9]});
+  }
+  return out;
+}
+
+function readRecords_(sid) {
+  const out = [];
+  listRecordSheets_().forEach(sh => {
+    const values = sh.getDataRange().getValues();
+    for (let r=1; r<values.length; r++) {
+      const row = values[r];
+      if (String(row[1]) !== sid) continue;
+      out.push({date:isoCell_(row[4]), week:row[5], statusJa:row[6], jobNo:row[7], name:row[8], content:row[9], start:timeCell_(row[10]), end:timeCell_(row[11]), breakMin:numberCell_(row[12]), hours:numberCell_(row[13]), sum7:numberCell_(row[14]), limit:numberCell_(row[15]), judge:row[16]});
+    }
+  });
+  out.sort((a,b)=>String(a.date).localeCompare(String(b.date)) || Number(a.jobNo||0)-Number(b.jobNo||0));
+  return out;
+}
+
+function appendSubmitLogError_(err) {
+  initSheets_();
+  appendRow_(SHEETS.submitLog, HEADERS.submitLog, [new Date(), '', '', '', '', '', '', '', 'ERROR', String(err && err.message || err)]);
+}
+
+function appendRow_(sheetName, headers, row) {
+  const sh = getSheet_(sheetName, headers);
+  sh.appendRow(row);
+}
+
+function rewriteSheet_(sh, rows, colCount) {
+  sh.clearContents();
+  if (rows.length) sh.getRange(1,1,rows.length,colCount).setValues(rows.map(row => pad_(row, colCount)));
+  sh.setFrozenRows(1);
+}
+
+function pad_(row, n) {
+  const out = row.slice(0,n);
+  while (out.length < n) out.push('');
+  return out;
+}
+
+function isBlankRecord_(r) { return r.status === 'blank' || r.statusJa === '未入力'; }
+function isBlankStatus_(s) { return String(s || '') === '未入力' || String(s || '') === 'blank'; }
+function statusToJa_(s) { if (s === 'work') return 'あり'; if (s === 'none') return 'なし'; return '未入力'; }
+
+function isoCell_(v) {
+  if (!v) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const s = String(v).trim();
+  const m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if (!m) return s;
+  return m[1] + '-' + ('0'+Number(m[2])).slice(-2) + '-' + ('0'+Number(m[3])).slice(-2);
+}
+
+function dateTimeCell_(v) {
+  if (!v) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  return String(v);
+}
+
+function timeCell_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm');
+  if (typeof v === 'number' && isFinite(v)) {
+    const totalMinutes = Math.round((((v % 1) + 1) % 1) * 24 * 60);
+    const hh = Math.floor(totalMinutes / 60) % 24;
+    const mm = totalMinutes % 60;
+    return ('0' + hh).slice(-2) + ':' + ('0' + mm).slice(-2);
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (m) return ('0' + Number(m[1])).slice(-2) + ':' + m[2];
+  m = s.match(/T(\d{1,2}):(\d{2})/);
+  if (m) return ('0' + Number(m[1])).slice(-2) + ':' + m[2];
+  return s;
+}
+
+function numberCell_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  const n = Number(v);
+  return isFinite(n) ? n : v;
+}
+
+function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
