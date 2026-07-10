@@ -27,11 +27,11 @@
 <body>
 <div class="app">
 <header>
-<h1>アルバイト時間記録 Supabase送信版 v002</h1>
+<h1>アルバイト時間記録 Supabase送信版 v004</h1>
 <div class="small" id="limitStatus">日別上限CSV：読込中...</div>
 <div class="bar"><button class="btn light" id="prevWeek">＜ 前週</button><div class="weekLabel" id="weekLabel"></div><button class="btn light" id="nextWeek">次週 ＞</button><button class="btn secondary" id="todayBtn">今週</button></div>
 </header>
-<details class="card" id="studentDetails"><summary><span class="summaryRow">学生情報</span></summary><div class="collapseBody"><div class="small">学生名・学籍番号・クラスは最初に1回だけ入力します。</div><div class="grid" style="margin-top:8px"><div><label>学生名</label><input id="studentName" placeholder="例：山田 太郎"></div><div><label>学籍番号</label><input id="studentId" placeholder="例：A001"></div></div><div style="margin-top:10px"><label>クラス</label><input id="studentClass" placeholder="例：初級A"></div></div></details>
+<details class="card" id="studentDetails"><summary><span class="summaryRow">学生情報</span></summary><div class="collapseBody"><div class="small">学生名・学籍番号・クラスは最初に1回だけ入力します。</div><div class="grid" style="margin-top:8px"><div><label>学生名</label><input id="studentName" placeholder="例：山田 太郎"></div><div><label>学籍番号</label><input id="studentId" placeholder="例：A001"></div></div><div style="margin-top:10px"><label>クラス</label><input id="studentClass" placeholder="例：AM403、PM206"></div></div></details>
 <details class="card" id="jobDetails"><summary><span class="summaryRow" id="jobSummary">アルバイト管理</span></summary><div class="collapseBody"><div class="small">アルバイト名・内容・勤務期間・締め日を登録します。必要な分だけ「＋アルバイト追加」で増やします。</div><div id="jobSettings"></div></div></details>
 <details class="card" id="toolDetails"><summary><span class="summaryRow">ツール</span></summary><div class="collapseBody"><div class="tools"><button class="btn light" id="copyPrevWeek">表示中の週を先週と同じにする</button></div><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><div class="small">データ引継ぎ用：過去に出力した勤務記録Excelを読み込んで、このスマホのデータに統合します。同じ日にスマホ側の入力とExcel側の入力が異なる場合は、新しいデータであるスマホ側を優先し、その日全体はExcelで上書きしません。</div><div class="tools"><button class="btn light" id="forceUpdateBtn">最新版に更新</button></div><div class="statusLine" id="updateStatus">更新：未実行</div><div class="tools"><button class="btn light" id="backupExcelBtn">Back up data</button></div><div class="statusLine" id="backupStatus">バックアップ：未実行</div><div class="tools"><button class="btn light" id="importExcelBtn">勤務記録Excelを読み込む</button><input id="importExcelInput" type="file" accept=".xlsx,.xls" style="display:none"></div><div class="statusLine" id="importStatus">読み込み：未実行</div><hr style="border:0;border-top:1px solid var(--line);margin:12px 0"><div class="small">開発・テスト用。最終版では削除します。</div><div class="tools"><button class="btn light" id="sampleDataBtn">サンプルデータを作成</button><button class="btn bad" id="resetDataBtn">データを初期化</button></div></div></details>
 <details class="card" id="supabaseDetails" open><summary><span class="summaryRow">学校へ送信（Supabase）</span></summary><div class="collapseBody"><div class="small">入力済みの勤務記録だけを学校のデータベースへ送信します。同じ record_id は更新され、record_id がない古い記録は日付と枠番号で補助判定します。送られてこない過去データは消しません。</div><div class="grid" style="margin-top:8px"><div><label>Supabase Project URL</label><input id="supabaseUrl" placeholder="https://xxxx.supabase.co"></div><div><label>publishable / anon key</label><input id="supabaseKey" placeholder="sb_publishable_... または anon key"></div></div><div class="tools"><button class="btn" id="sendSupabaseBtn">学校へ送信</button></div><div class="statusLine" id="supabaseStatus">送信：未実行</div></div></details>
@@ -40,7 +40,7 @@
 </div>
 <div class="footer"><button class="btn" id="shareExcelBtn">Excelを共有</button><button class="btn secondary" id="sharePdfBtn">直近3週間PDFを共有</button><button class="btn light" id="saveBtn">今すぐ保存</button></div>
 <script>
-const VERSION='supabase-v002';
+const VERSION='supabase-v004';
 const KEY='student-work-tracker-v047';
 const OLD_KEYS=['student-work-tracker-v046','student-work-tracker-v045','student-work-tracker-v043','student-work-tracker-v042','student-work-tracker-v041','student-work-tracker-v040','student-work-tracker-v039','student-work-tracker-v038','student-work-tracker-v037','student-work-tracker-v035','student-work-tracker-v034','student-work-tracker-v033','student-work-tracker-v032','student-work-tracker-v031','student-work-tracker-v030','student-work-tracker-v029','student-work-tracker-v028','student-work-tracker-v027','student-work-tracker-v026','student-work-tracker-v025','student-work-tracker-v024','student-work-tracker-v023','student-work-tracker-v022','student-work-tracker-v021','student-work-tracker-v020','student-work-tracker-v019','student-work-tracker-v018'];
 const jpWeek=['日','月','火','水','木','金','土'];
@@ -110,10 +110,19 @@ async function loadLimitsCsv(){
     setLimitStatus('未読込（'+err.message+'）');
   }
 }
+function normalizeClassName(value){
+  value=String(value||'').replace(/[Ａ-Ｚａ-ｚ０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0));
+  value=value.toUpperCase().replace(/[\s　\-－ー―‐‑‒–—―]/g,'');
+  return value;
+}
+function isValidClassName(value){return /^[A-Z]{2}[0-9]{3}$/.test(String(value||''));}
 function updateStateFromInputs(){
   state.student.name=document.getElementById('studentName').value;
   state.student.id=document.getElementById('studentId').value;
-  state.student.className=document.getElementById('studentClass').value;
+  const classEl=document.getElementById('studentClass');
+  const normalizedClass=normalizeClassName(classEl.value);
+  state.student.className=normalizedClass;
+  if(classEl.value!==normalizedClass)classEl.value=normalizedClass;
   state.supabase=state.supabase||{url:'',key:''};
   const su=document.getElementById('supabaseUrl'), sk=document.getElementById('supabaseKey');
   if(su)state.supabase.url=su.value.trim();
@@ -641,7 +650,7 @@ function addWithinLimit(ds,jobIndex,startMin,durMin,breakMin,limitMin){
 function activeForDate(ds){return activeJobIndexes(ds)}
 state.currentWeekStart=weekStart(parseDate('2026-06-14'));
 state.lastDate='2026-06-20';
-state.student={name:'テスト 太郎'+rnd(1,99),id:'SAMPLE'+String(rnd(1,999)).padStart(3,'0'),className:'初級A'};
+state.student={name:'テスト 太郎'+rnd(1,99),id:'SAMPLE'+String(rnd(1,999)).padStart(3,'0'),className:'AM403'};
 const candidates=[
   ['セブンイレブン','コンビニ店員','15'],['ローソン','レジ・品出し','20'],['ファミリーマート','コンビニ店員','25'],['工場','食品製造補助','31'],['カフェ','ホール・接客','10'],['清掃会社','清掃補助','5'],['居酒屋','ホール','15'],['スーパー','品出し','20'],['ホテル','ベッドメイク','31'],['イベント会社','イベント補助','10']
 ];
@@ -717,8 +726,9 @@ document.addEventListener('change',e=>{const t=e.target;if(t.matches('#studentNa
 document.addEventListener('click',e=>{const t=e.target;if(t.dataset.addWork){addWorkRow(t.dataset.addWork)}if(t.dataset.deleteWork){const[ds,idxRaw]=t.dataset.deleteWork.split(',');deleteWorkRow(ds,Number(idxRaw))}if(t.dataset.deleteJob){deleteJobMaster(Number(t.dataset.deleteJob))}});
 document.addEventListener('change',e=>{const t=e.target;if(t.dataset.workField){updateWorkField(t,true)}});
 document.addEventListener('blur',e=>{const t=e.target;if(t.dataset.workField){updateWorkField(t,true)}},true);
-function updateWorkField(t,doNormalize=false){const ds=t.dataset.workDate,idx=Number(t.dataset.workIndex),field=t.dataset.workField;const day=ensureDay(ds);const w=day.works[idx];if(!w)return;if(field==='jobIndex'){if(t.value===''){w.jobIndex=null;w.status='blank';w.hours=null;}else if(t.value==='__none'){w.jobIndex=null;w.status='none';w.start='';w.end='';w.breakMin=0;w.hours=0;}else{w.jobIndex=Number(t.value);if(w.status==='none')w.status='blank';}}else if(field==='breakMin'){w.breakMin=Number(t.value)||0}else{let v=t.value;if(doNormalize&&(field==='start'||field==='end')){v=normalizeTimeText(v);t.value=v}w[field]=v}finalizeWork(w);state.lastDate=ds;save();renderDays()}
+function updateWorkField(t,doNormalize=false){const ds=t.dataset.workDate,idx=Number(t.dataset.workIndex),field=t.dataset.workField;const day=ensureDay(ds);const w=day.works[idx];if(!w)return;if(field==='jobIndex'){if(t.value===''){w.jobIndex=null;w.status='blank';w.hours=null;}else if(t.value==='__none'){w.jobIndex=null;w.status='none';w.start='';w.end='';w.breakMin=0;w.hours=0;}else{w.jobIndex=Number(t.value);if(w.status==='none')w.status='blank';}}else if(field==='breakMin'){w.breakMin=Number(t.value)||0}else{let v=t.value;if(doNormalize&&(field==='start'||field==='end')){v=normalizeTimeText(v);if(v&&!isValidClockTime(v)){alert((field==='start'?'出勤':'退勤')+'時刻に24:00以降は使えません。0時台は 00:22 のように入力してください。');v='';}t.value=v}w[field]=v}finalizeWork(w);state.lastDate=ds;save();renderDays()}
 function normalizeTimeText(value){value=String(value||'').replace(/\D/g,'');if(value.length===0)return'';if(value.length<=2)return'00:'+value.padStart(2,'0');if(value.length===3)return'0'+value[0]+':'+value.slice(1);return value.slice(0,-2)+':'+value.slice(-2)}
+function isValidClockTime(v){return /^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(String(v||'').trim())}
 function finalizeWork(w){if(w.status==='none'){w.jobIndex=null;w.start='';w.end='';w.breakMin=0;w.hours=0;return}const hasAny=w.jobIndex!==null&&w.jobIndex!==undefined||nonEmpty(w.start)||nonEmpty(w.end)||Number(w.breakMin||0)>0;if(!hasAny){w.status='blank';w.hours=null;return}if(w.jobIndex!==null&&w.jobIndex!==undefined&&nonEmpty(w.start)&&nonEmpty(w.end)){const h=calcHours(w.start,w.end,w.breakMin);if(h>16){alert('勤務時間が16時間を超えています。入力を確認してください。');w.status='blank';w.hours=null;return}if(h>12&&!w._warnedLong){if(!confirm('勤務時間が12時間を超えています。保存しますか？')){w.status='blank';w.hours=null;return}w._warnedLong=true}w.status='work';w.hours=h}else{w.status='blank';w.hours=null}}
 document.getElementById('prevWeek').onclick=()=>{updateStateFromInputs();state.currentWeekStart=iso(addDays(parseDate(state.currentWeekStart),-7));save();render()};
 document.getElementById('nextWeek').onclick=()=>{updateStateFromInputs();state.currentWeekStart=iso(addDays(parseDate(state.currentWeekStart),7));save();render()};
@@ -734,6 +744,7 @@ function supabaseHeaders(key){return {'apikey':key,'Authorization':'Bearer '+key
 function isUuid(v){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||'').trim())}
 function cleanRecordId(v){v=String(v||'').trim();return isUuid(v)?v:''}
 function validTimeForSupabase(v){return /^(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(String(v||'').trim())}
+function invalidTimeMessage(kind,r,value){return kind+'時刻が不正です：'+recordLabel(r)+' '+JSON.stringify(value)+'。24:00以降は使えません。0時台は 00:22 のように入力してください。'}
 function recordLabel(r){return (r.work_date||'日付不明')+' / slot '+(r.slot_no||'?')+' / '+(r.job_name||r.status||'')}
 function validateSupabaseRecords(records){
   let invalidIdCount=0;
@@ -742,8 +753,8 @@ function validateSupabaseRecords(records){
     if(!r.work_date)throw new Error('送信データの日付が空です：'+recordLabel(r));
     if(!r.slot_no)throw new Error('送信データのslot_noが空です：'+recordLabel(r));
     if(r.status==='勤務'){
-      if(!validTimeForSupabase(r.start_time))throw new Error('開始時刻が不正です：'+recordLabel(r)+' start_time='+JSON.stringify(r.start_time));
-      if(!validTimeForSupabase(r.end_time))throw new Error('終了時刻が不正です：'+recordLabel(r)+' end_time='+JSON.stringify(r.end_time));
+      if(!validTimeForSupabase(r.start_time))throw new Error(invalidTimeMessage('開始',r,r.start_time));
+      if(!validTimeForSupabase(r.end_time))throw new Error(invalidTimeMessage('終了',r,r.end_time));
     }
     ['break_minutes','work_hours','limit_hours','seven_day_total'].forEach(k=>{
       if(r[k]!==null&&r[k]!==''&&r[k]!==undefined&&Number.isNaN(Number(r[k])))throw new Error(k+' が数値ではありません：'+recordLabel(r)+' '+JSON.stringify(r[k]));
@@ -764,6 +775,26 @@ function explainSupabaseError(txt,status){
     return parts.join(' / ')||txt;
   }catch(e){return txt}
 }
+
+function enteredSubmissionJobs(){
+  const jobs=[];
+  (state.jobs||[]).forEach((j,i)=>{
+    if(!hasAnyJobData(j))return;
+    const name=String(j.name||'').trim();
+    if(!name)return;
+    jobs.push({
+      job_index:i,
+      job_name:name,
+      job_content:String(j.content||'').trim(),
+      start_date:j.startDate||'',
+      end_date:j.endDate||'',
+      closing_day:j.closeDay===''||j.closeDay===null||j.closeDay===undefined?'':Number(j.closeDay),
+      is_active:!j.endDate
+    });
+  });
+  return jobs;
+}
+
 function enteredSubmissionRecords(){
   const records=[];
   const dates=Object.keys(state.days||{}).sort();
@@ -774,13 +805,13 @@ function enteredSubmissionRecords(){
       normalizeWork(w);
       if(w.status==='none'){
         slot++; w.slotNo=slot;
-        {const rawId=w.record_id||w.recordId||''; records.push({record_id:cleanRecordId(rawId),_invalid_record_id:rawId&&!cleanRecordId(rawId),work_date:ds,slot_no:slot,status:'なし',job_name:'',start_time:'',end_time:'',break_minutes:0,work_hours:0,limit_hours:limit(ds),seven_day_total:Number(sevenHours(ds).toFixed(2)),note:''});}
+        {const rawId=w.record_id||w.recordId||''; records.push({record_id:cleanRecordId(rawId),_invalid_record_id:rawId&&!cleanRecordId(rawId),work_date:ds,slot_no:slot,status:'なし',job_index:null,job_name:'',start_time:'',end_time:'',break_minutes:0,work_hours:0,limit_hours:limit(ds),seven_day_total:Number(sevenHours(ds).toFixed(2)),note:''});}
         return;
       }
       if(w.status==='work'&&w.jobIndex!==null&&w.jobIndex!==undefined){
         slot++; w.slotNo=slot;
         const ji=Number(w.jobIndex);
-        {const rawId=w.record_id||w.recordId||''; records.push({record_id:cleanRecordId(rawId),_invalid_record_id:rawId&&!cleanRecordId(rawId),work_date:ds,slot_no:slot,status:'勤務',job_name:jobLabel(ji),start_time:w.start||'',end_time:w.end||'',break_minutes:Number(w.breakMin||0),work_hours:Number((typeof w.hours==='number'?w.hours:calcHours(w.start,w.end,w.breakMin)||0).toFixed(2)),limit_hours:limit(ds),seven_day_total:Number(sevenHours(ds).toFixed(2)),note:''});}
+        {const rawId=w.record_id||w.recordId||''; records.push({record_id:cleanRecordId(rawId),_invalid_record_id:rawId&&!cleanRecordId(rawId),work_date:ds,slot_no:slot,status:'勤務',job_index:ji,job_name:jobLabel(ji),start_time:w.start||'',end_time:w.end||'',break_minutes:Number(w.breakMin||0),work_hours:Number((typeof w.hours==='number'?w.hours:calcHours(w.start,w.end,w.breakMin)||0).toFixed(2)),limit_hours:limit(ds),seven_day_total:Number(sevenHours(ds).toFixed(2)),note:''});}
       }
     });
   });
@@ -823,10 +854,16 @@ async function sendToSupabase(){
     const studentNo=String(state.student.id||'').trim();
     if(!studentNo){alert('学籍番号を入力してください。');return;}
     if(!state.student.name){alert('学生名を入力してください。');return;}
+    state.student.className=normalizeClassName(state.student.className);
+    const classEl=document.getElementById('studentClass');
+    if(classEl)classEl.value=state.student.className;
+    if(!isValidClassName(state.student.className)){alert('クラスを正しく入力してください。例：AM403、PM206');return;}
     const url=cleanSupabaseUrl(state.supabase&&state.supabase.url);
     const key=String(state.supabase&&state.supabase.key||'').trim();
     if(!url||!key){alert('Supabase Project URL と publishable / anon key を入力してください。');return;}
+    const jobs=enteredSubmissionJobs();
     const records=enteredSubmissionRecords();
+    if(!jobs.length){alert('アルバイト登録がありません。先にアルバイトを登録してください。');return;}
     if(!records.length){alert('送信する勤務記録がありません。');return;}
     const check=validateSupabaseRecords(records);
     const restoreCode=ensureRestoreCode();
@@ -835,12 +872,12 @@ async function sendToSupabase(){
     const withoutId=records.length-withId;
     const dates=records.map(r=>r.work_date).sort();
     const range=(dates[0]||'')+'〜'+(dates[dates.length-1]||'');
-    if(st)st.textContent='送信中... '+records.length+'件（record_idあり '+withId+'件 / なし '+withoutId+'件、対象 '+range+'）';
+    if(st)st.textContent='送信中... 勤務記録 '+records.length+'件 / アルバイト登録 '+jobs.length+'件（record_idあり '+withId+'件 / なし '+withoutId+'件、対象 '+range+'）';
     const sendRecords=records.map(r=>{const x=Object.assign({},r);delete x._invalid_record_id;return x});
     const res=await fetch(url+'/rest/v1/rpc/submit_work_records',{
       method:'POST',
       headers:supabaseHeaders(key),
-      body:JSON.stringify({p_student_no:studentNo,p_name:state.student.name||'',p_class_name:state.student.className||'',p_restore_code:restoreCode,p_records:sendRecords})
+      body:JSON.stringify({p_student_no:studentNo,p_name:state.student.name||'',p_class_name:state.student.className||'',p_restore_code:restoreCode,p_jobs:jobs,p_records:sendRecords})
     });
     const txt=await res.text();
     if(!res.ok){
